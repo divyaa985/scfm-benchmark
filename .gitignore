@@ -7,8 +7,9 @@ venv/
 .ruff_cache/
 .ipynb_checkpoints/
 
-# Data and model weights are never committed
-data/
+# Data and model weights are never committed, but the folder note is
+data/*
+!data/README.md
 *.h5ad
 *.ckpt
 *.pt

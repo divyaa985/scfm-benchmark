@@ -1,5 +1,9 @@
 # scfm-benchmark
 
+[![ci](https://github.com/divyaa985/scfm-benchmark/actions/workflows/ci.yml/badge.svg)](https://github.com/divyaa985/scfm-benchmark/actions/workflows/ci.yml)
+[![python](https://img.shields.io/badge/python-3.10%20%7C%203.12-blue)](https://www.python.org/)
+[![licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+
 **Do single-cell foundation model embeddings transfer to an unseen batch better than a PCA baseline — and better than a random projection?**
 
 Single-cell foundation models are pretrained on tens of millions of cells and released with strong claims about general-purpose cell representations. A parallel literature keeps finding that simple, parameter-free representations match or beat them on downstream tasks, and that evaluating these models is harder than it looks. Both things are reported honestly; the disagreement usually comes down to protocol.
