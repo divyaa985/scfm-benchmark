@@ -24,6 +24,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     adjusted_rand_score,
     balanced_accuracy_score,
+    confusion_matrix,
     f1_score,
     normalized_mutual_info_score,
 )
@@ -31,6 +32,21 @@ from sklearn.preprocessing import StandardScaler
 
 from .data import Dataset
 from .embedders import build
+
+
+@dataclass
+class FoldOutput:
+    """Everything one fold produces: the summary row, plus two tidy tables.
+
+    The per-class and confusion tables are what make failure legible. A single
+    macro F1 tells you a method scored 0.71; the per-class table tells you it
+    scored 0.95 on alpha cells and 0.08 on epsilon cells, which is a different
+    and far more actionable statement.
+    """
+
+    summary: FoldResult
+    per_class: pd.DataFrame
+    confusion: pd.DataFrame
 
 
 @dataclass
@@ -62,6 +78,16 @@ def run_fold(
     seed: int = 0,
 ) -> FoldResult:
     """Fit on all batches but one, evaluate on the held-out batch."""
+    return run_fold_detailed(dataset, embedder_name, held_out_batch, seed).summary
+
+
+def run_fold_detailed(
+    dataset: Dataset,
+    embedder_name: str,
+    held_out_batch: str,
+    seed: int = 0,
+) -> FoldOutput:
+    """As run_fold, but also returns per-class scores and a confusion table."""
     batches = dataset.adata.obs[dataset.batch_key].astype(str).to_numpy()
     labels = dataset.labels
 
@@ -96,7 +122,38 @@ def run_fold(
     else:
         ari = nmi = float("nan")
 
-    return FoldResult(
+    classes = sorted(np.unique(np.concatenate([y_train, y_test])))
+    present = sorted(np.unique(y_test))
+
+    per_class_f1 = f1_score(
+        y_test, y_pred, average=None, labels=present, zero_division=0
+    )
+    supports = [int((y_test == c).sum()) for c in present]
+    per_class = pd.DataFrame(
+        {
+            "dataset": dataset.name,
+            "embedder": embedder_name,
+            "held_out_batch": held_out_batch,
+            "seed": seed,
+            "celltype": present,
+            "f1": per_class_f1,
+            "support": supports,
+        }
+    )
+
+    cm = confusion_matrix(y_test, y_pred, labels=classes)
+    confusion = (
+        pd.DataFrame(cm, index=classes, columns=classes)
+        .rename_axis("true_label")
+        .reset_index()
+        .melt(id_vars="true_label", var_name="pred_label", value_name="count")
+    )
+    confusion.insert(0, "seed", seed)
+    confusion.insert(0, "held_out_batch", held_out_batch)
+    confusion.insert(0, "embedder", embedder_name)
+    confusion = confusion[confusion["count"] > 0]
+
+    summary = FoldResult(
         dataset=dataset.name,
         embedder=embedder_name,
         held_out_batch=held_out_batch,
@@ -111,25 +168,41 @@ def run_fold(
         fit_seconds=round(fit_seconds, 2),
         embed_dim=int(z_train.shape[1]),
     )
+    return FoldOutput(summary=summary, per_class=per_class, confusion=confusion)
+
+
+@dataclass
+class BenchmarkResult:
+    """Three tidy tables: one row per fold, per class, per confusion cell."""
+
+    folds: pd.DataFrame
+    per_class: pd.DataFrame
+    confusion: pd.DataFrame
 
 
 def run_benchmark(
     dataset: Dataset,
     embedder_names: list[str],
     seeds: tuple[int, ...] = (0, 1, 2),
-) -> pd.DataFrame:
+) -> BenchmarkResult:
     """Every embedder x every held-out batch x every seed."""
-    rows = []
+    rows, per_class, confusion = [], [], []
     for embedder_name in embedder_names:
         for batch in dataset.batches:
             for seed in seeds:
-                result = run_fold(dataset, embedder_name, batch, seed)
-                rows.append(asdict(result))
+                out = run_fold_detailed(dataset, embedder_name, batch, seed)
+                rows.append(asdict(out.summary))
+                per_class.append(out.per_class)
+                confusion.append(out.confusion)
                 print(
                     f"  {embedder_name:<24} held out {batch:<16} "
-                    f"seed {seed}  macro-F1 {result.macro_f1:.3f}"
+                    f"seed {seed}  macro-F1 {out.summary.macro_f1:.3f}"
                 )
-    return pd.DataFrame(rows)
+    return BenchmarkResult(
+        folds=pd.DataFrame(rows),
+        per_class=pd.concat(per_class, ignore_index=True),
+        confusion=pd.concat(confusion, ignore_index=True),
+    )
 
 
 def summarise(results: pd.DataFrame) -> pd.DataFrame:

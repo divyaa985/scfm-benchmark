@@ -70,7 +70,8 @@ def test_pca_baseline_beats_the_negative_control():
     evaluation is measuring something other than biology.
     """
     ds = make_synthetic(n_cells=600, n_genes=300, n_labels=5, n_batches=3, seed=2)
-    summary = summarise(run_benchmark(ds, ["hvg_pca", "random_projection"], seeds=(0,)))
+    bench = run_benchmark(ds, ["hvg_pca", "random_projection"], seeds=(0,))
+    summary = summarise(bench.folds)
     scores = summary.set_index("embedder")["macro_f1_mean"]
     assert scores["hvg_pca"] > scores["random_projection"]
 
@@ -80,7 +81,26 @@ def test_figures_are_written(tmp_path):
     from scfmbench.plots import make_all
 
     ds = make_synthetic(n_cells=300, n_genes=120, n_batches=3, seed=3)
-    results = run_benchmark(ds, ["hvg_pca", "random_projection"], seeds=(0,))
-    paths = make_all(results, tmp_path, "test")
-    assert len(paths) == 3
+    bench = run_benchmark(ds, ["hvg_pca", "random_projection"], seeds=(0,))
+    paths = make_all(
+        bench.folds, tmp_path, "test",
+        per_class=bench.per_class, confusion=bench.confusion,
+    )
+    assert len(paths) == 5
     assert all(p.exists() and p.stat().st_size > 1000 for p in paths)
+
+
+def test_per_class_and_confusion_tables_are_consistent():
+    """Confusion counts must total the number of held-out cells in each fold."""
+    ds = make_synthetic(n_cells=400, n_genes=150, n_batches=4, seed=7)
+    bench = run_benchmark(ds, ["hvg_pca"], seeds=(0,))
+
+    for batch in ds.batches:
+        n_held = int((ds.adata.obs["batch"].astype(str) == batch).sum())
+        counted = bench.confusion.loc[
+            bench.confusion.held_out_batch == batch, "count"
+        ].sum()
+        assert counted == n_held
+
+    assert bench.per_class["f1"].between(0, 1).all()
+    assert (bench.per_class["support"] > 0).all()

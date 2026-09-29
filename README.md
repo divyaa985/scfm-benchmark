@@ -75,6 +75,24 @@ The margin plot makes the same point per fold rather than on average. `hvg_pca` 
 
 The per-assay grid is the one to watch on real data. A method can average respectably and still collapse on a single technology, and that collapse is the thing a practitioner needs to know about.
 
+### Where methods fail, and what they confuse
+
+![Per-cell-type F1](results/figures/synthetic_per_celltype_f1.png)
+
+Macro F1 is an average over this plot. A method can look respectable in aggregate while scoring near zero on every rare type — the failure mode that matters most when you are annotating a new dataset and the rare populations are the reason you sequenced it.
+
+![Confusion matrices](results/figures/synthetic_confusion.png)
+
+Confusion matrices for the best method and the control, row-normalised. The question is not only how often a method is right but what it reaches for when it is wrong: a model that confuses two closely related subtypes is in a different situation from one scattering errors uniformly.
+
+### UMAP, and why it is here under protest
+
+![UMAP of each embedding space](results/figures/synthetic_umap.png)
+
+UMAP is the standard way to look at single-cell data and a poor way to argue about it. Distances between clusters carry no meaning, cluster density carries no meaning, and `n_neighbors` and `min_dist` can be tuned until almost any embedding looks well separated. No conclusion in this repository rests on these panels, and they are off by default — pass `--umap` to draw them.
+
+They earn their place for one reason. Look at the middle column. That is a random Gaussian projection, a representation containing nothing learned from any data, and it still produces visible cell-type structure. Put it beside the learned embedding and the honest reading is that a convincing UMAP is weak evidence. The third column, two numbers per cell, is what an embedding with genuinely no signal looks like — which is a useful calibration for how bad a picture has to be before it looks bad.
+
 ### Human pancreas — *pending*
 
 Target dataset below. Results will be committed with the full fold-level CSV, not just the summary, so anyone can recompute the aggregates.
@@ -106,7 +124,7 @@ pytest -q                              # tests, no download needed
 python -m scfmbench.run --synthetic    # full pipeline in under a minute
 ```
 
-Each run writes `results/<name>_folds.csv` (every fold, every seed), `results/<name>_summary.csv`, a markdown table, and the three figures above into `results/figures/`. Pass `--no-plots` to skip the figures.
+Each run writes four tidy tables into `results/` — `<name>_folds.csv` (one row per fold and seed), `<name>_summary.csv`, `<name>_per_class.csv` (one row per cell type per fold) and `<name>_confusion.csv` — plus the figures above into `results/figures/`. Pass `--no-plots` to skip the figures, or `--umap` to add the UMAP panels, which are slow on large data.
 
 Everything so far runs on CPU. The foundation model embedders will need a GPU for the forward pass but no training — a free Colab T4 is enough for a dataset this size.
 
@@ -138,7 +156,7 @@ src/scfmbench/
   data.py        loading, leak-free preprocessing, synthetic generator
   embedders.py   the methods under test and the registry
   evaluate.py    leave-one-batch-out protocol and metrics
-  plots.py       the three figures
+  plots.py       the figures, including the optional UMAP panels
   run.py         command line entry point
 tests/           runs on CPU in seconds, no download
 configs/         dataset definitions
@@ -151,6 +169,7 @@ results/         summaries, fold-level CSVs, figures
 
 - [x] Leave-one-batch-out harness, leak-free preprocessing, two controls
 - [x] `hvg_pca` baseline, test suite, CI, figures
+- [x] Per-cell-type F1, confusion matrices, UMAP panels
 - [ ] Human pancreas results
 - [ ] scVI baseline (trained per fold on training batches only)
 - [ ] Geneformer zero-shot embeddings

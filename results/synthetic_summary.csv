@@ -1,4 +1,4 @@
 embedder,macro_f1_mean,macro_f1_std,balanced_acc_mean,ari_mean,nmi_mean,seconds_mean,embed_dim
-hvg_pca,1.0,0.0,1.0,1.0,1.0,0.039,50
-random_projection,0.937,0.028,0.937,0.956,0.949,0.0,50
+hvg_pca,1.0,0.0,1.0,1.0,1.0,0.046,50
+random_projection,0.937,0.028,0.937,0.956,0.949,0.009,50
 total_counts,0.217,0.032,0.277,0.063,0.12,0.0,2

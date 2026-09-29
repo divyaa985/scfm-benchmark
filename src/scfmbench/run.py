@@ -13,7 +13,7 @@ from pathlib import Path
 from .data import load_h5ad, make_synthetic
 from .embedders import REGISTRY
 from .evaluate import run_benchmark, summarise, to_markdown
-from .plots import make_all
+from .plots import make_all, plot_umap_panels
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,6 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
     p.add_argument("--out", type=Path, default=Path("results"))
     p.add_argument("--no-plots", action="store_true", help="Skip figures.")
+    p.add_argument(
+        "--umap",
+        action="store_true",
+        help="Also draw UMAP panels. Illustration only, and slow on large data.",
+    )
     args = p.parse_args(argv)
 
     if args.synthetic:
@@ -43,17 +48,31 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\n{dataset}\nBatches: {', '.join(dataset.batches)}\n")
 
-    results = run_benchmark(dataset, args.embedders, tuple(args.seeds))
+    bench = run_benchmark(dataset, args.embedders, tuple(args.seeds))
+    results = bench.folds
     summary = summarise(results)
 
     args.out.mkdir(parents=True, exist_ok=True)
     results.to_csv(args.out / f"{dataset.name}_folds.csv", index=False)
     summary.to_csv(args.out / f"{dataset.name}_summary.csv", index=False)
+    bench.per_class.to_csv(args.out / f"{dataset.name}_per_class.csv", index=False)
+    bench.confusion.to_csv(args.out / f"{dataset.name}_confusion.csv", index=False)
     table = to_markdown(summary)
     (args.out / f"{dataset.name}_summary.md").write_text(table + "\n")
 
     if not args.no_plots:
-        figures = make_all(results, args.out / "figures", dataset.name)
+        figures = make_all(
+            results,
+            args.out / "figures",
+            dataset.name,
+            per_class=bench.per_class,
+            confusion=bench.confusion,
+        )
+        if args.umap:
+            print("  drawing UMAP panels, this takes a while...")
+            figures.append(
+                plot_umap_panels(dataset, args.embedders, args.out / "figures")
+            )
         for fig in figures:
             print(f"  figure: {fig}")
 

@@ -20,6 +20,8 @@ results/*
 !results/*_summary.md
 !results/*_summary.csv
 !results/*_folds.csv
+!results/*_per_class.csv
+!results/*_confusion.csv
 !results/figures/
 !results/figures/*.png
 
