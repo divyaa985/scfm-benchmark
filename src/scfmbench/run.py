@@ -13,6 +13,7 @@ from pathlib import Path
 from .data import load_h5ad, make_synthetic
 from .embedders import REGISTRY
 from .evaluate import run_benchmark, summarise, to_markdown
+from .plots import make_all
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--embedders", nargs="+", default=sorted(REGISTRY))
     p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
     p.add_argument("--out", type=Path, default=Path("results"))
+    p.add_argument("--no-plots", action="store_true", help="Skip figures.")
     args = p.parse_args(argv)
 
     if args.synthetic:
@@ -49,6 +51,11 @@ def main(argv: list[str] | None = None) -> int:
     summary.to_csv(args.out / f"{dataset.name}_summary.csv", index=False)
     table = to_markdown(summary)
     (args.out / f"{dataset.name}_summary.md").write_text(table + "\n")
+
+    if not args.no_plots:
+        figures = make_all(results, args.out / "figures", dataset.name)
+        for fig in figures:
+            print(f"  figure: {fig}")
 
     print(f"\nLeave-one-batch-out results for {dataset.name}:\n")
     print(table)

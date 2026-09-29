@@ -12,13 +12,35 @@ This repository is one protocol, applied identically to every method, with two d
 
 ## The protocol
 
-**Leave-one-batch-out label transfer.** For each batch in turn: fit the embedder on all *other* batches, fit a logistic regression cell-type classifier on those embeddings, then predict the held-out batch. Repeat across every batch and three seeds.
+```mermaid
+flowchart TD
+    A["Dataset: cells from several assays"] --> B["Train split: all assays but one"]
+    A --> C["Held-out split: one whole assay, unseen"]
+    B --> D["Fit embedder: HVGs, scaling, PCA"]
+    D --> E["Fit classifier: logistic regression probe"]
+    C --> F["Embed and predict: transform only, never fit"]
+    E --> F
+    F --> G["Score: macro F1, ARI, NMI, runtime"]
+    G --> H["Repeat for every assay and seed, then average"]
+```
 
-Three design choices do the real work here:
+**Leave-one-batch-out label transfer.** For each batch in turn: fit the embedder on all *other* batches, fit a logistic regression cell-type classifier on those embeddings, then predict the held-out batch.
 
-**Nothing is fit on the held-out batch — including gene selection.** Highly variable gene selection, scaling and PCA are all fit on training cells and applied to test cells. Selecting HVGs on the full matrix before splitting is a quiet leak that inflates every method in the table, and it is common enough in published comparisons to be worth ruling out explicitly. See `select_hvg` in `src/scfmbench/data.py`.
+### Step by step
 
-**Held-out batches are different technologies, not random cell splits.** A random 80/20 split over pooled cells leaves near-duplicate cells on both sides and measures almost nothing. Holding out an entire assay is the situation an actual user faces.
+1. **Load counts.** Raw counts are pulled from `layers['counts']` rather than trusting whatever normalisation the file shipped with, so every method starts from the same place. Cell types with fewer than 20 cells are dropped — you cannot measure per-class F1 on three cells.
+2. **Split by assay, not at random.** One sequencing technology is held out whole.
+3. **Fit the embedder on training cells only.** Gene selection, scaling and the PCA rotation are all learned here and nowhere else.
+4. **Transform both splits** with those frozen parameters.
+5. **Fit a logistic regression** on the training embedding.
+6. **Predict the held-out assay** and score it.
+7. **Repeat** across every assay and three seeds, then aggregate mean and spread.
+
+### Three choices that do the real work
+
+**Nothing is fit on the held-out batch — including gene selection.** Selecting highly variable genes on the full matrix before splitting is a quiet leak: gene selection has then seen the test assay, and it inflates every method in the table by an amount nobody can recover afterwards. See `select_hvg` in `src/scfmbench/data.py`, which takes only the training matrix.
+
+**Held-out batches are different technologies, not random cell splits.** A random 80/20 split over pooled cells leaves near-duplicate cells on both sides and measures close to nothing. Holding out an entire assay is the situation an actual user faces when they apply a published model to their own data.
 
 **Macro F1 is the headline, not accuracy.** Cell type abundances are heavily skewed. A model that nails the two dominant types and fails on the other eleven can post excellent accuracy, which is precisely the failure mode worth catching.
 
@@ -35,27 +57,33 @@ Three design choices do the real work here:
 
 ### Synthetic data (plumbing check, not a finding)
 
-```
-| embedder            | macro-F1 | ± sd  | balanced acc | ARI   | NMI   | dim | sec |
-|---------------------|----------|-------|--------------|-------|-------|-----|-----|
-| hvg_pca             | 1.000    | 0.000 | 1.000        | 1.000 | 1.000 | 50  | 0.0 |
-| random_projection   | 0.937    | 0.028 | 0.937        | 0.956 | 0.949 | 50  | 0.0 |
-| total_counts        | 0.217    | 0.032 | 0.277        | 0.063 | 0.120 | 2   | 0.0 |
-```
+| embedder | macro-F1 | ± sd | balanced acc | ARI | NMI | dim |
+|---|---|---|---|---|---|---|
+| `hvg_pca` | **1.000** | 0.000 | 1.000 | 1.000 | 1.000 | 50 |
+| `random_projection` | **0.937** | 0.028 | 0.937 | 0.956 | 0.949 | 50 |
+| `total_counts` | **0.217** | 0.032 | 0.277 | 0.063 | 0.120 | 2 |
 
-Reproduce with `python -m scfmbench.run --synthetic`.
+![Macro F1 by embedder](results/figures/synthetic_macro_f1.png)
 
-Read this as a wiring test only. The synthetic generator draws cell types from well-separated gamma programs, so the task is easy enough that even a random projection reaches 0.94 — which is itself the point of having the control. Note also how small the gap is between a real representation and a random one on easy data. Any benchmark reporting only the top row would look far more impressive than it deserves.
+Read this as a wiring test only. The synthetic generator draws cell types from well-separated gamma programs, so the task is easy enough that a random projection reaches 0.94 — which is exactly why the control is here. Note how narrow the gap is between a learned representation and a random one. A benchmark reporting only the top row would look far more impressive than it deserves.
+
+![Margin over the control](results/figures/synthetic_gap_to_control.png)
+
+The margin plot makes the same point per fold rather than on average. `hvg_pca` wins by about 0.06 and wins in every fold, which is a consistent but small victory. `total_counts` loses by 0.72, confirming the synthetic cell types are not separable by sequencing depth alone — if they were, the generator would be leaking a shortcut and the dataset would be worthless as a check.
+
+![Macro F1 by held-out assay](results/figures/synthetic_by_batch.png)
+
+The per-assay grid is the one to watch on real data. A method can average respectably and still collapse on a single technology, and that collapse is the thing a practitioner needs to know about.
 
 ### Human pancreas — *pending*
 
-Target dataset below. Results will be committed here with the full fold-level CSV, not just the summary.
+Target dataset below. Results will be committed with the full fold-level CSV, not just the summary, so anyone can recompute the aggregates.
 
 ---
 
 ## Getting the data
 
-The first real dataset is the human pancreas benchmark from Luecken et al. 2022, which is the standard integration benchmark for exactly this question: roughly 16k cells across four sequencing technologies (inDrop, CEL-Seq2, Smart-Seq2, SMARTer) with curated cell type labels, so batch is confounded with assay in a realistic way.
+The first real dataset is the human pancreas benchmark from Luecken et al. 2022, the standard integration benchmark for exactly this question: roughly 16k cells across four sequencing technologies (inDrop, CEL-Seq2, Smart-Seq2, SMARTer) with curated cell type labels, so batch is confounded with assay in a realistic way.
 
 Download `human_pancreas_norm_complexBatch.h5ad` from the Luecken et al. figshare collection ([10.6084/m9.figshare.12420968](https://doi.org/10.6084/m9.figshare.12420968)) into `data/`. Raw counts live in `layers['counts']`, the batch key is `tech` and the label key is `celltype`; the loader handles all three.
 
@@ -74,9 +102,11 @@ git clone https://github.com/divyaa985/scfm-benchmark.git
 cd scfm-benchmark
 pip install -e ".[dev]"
 
-pytest -q                              # 10 tests, no download needed
+pytest -q                              # tests, no download needed
 python -m scfmbench.run --synthetic    # full pipeline in under a minute
 ```
+
+Each run writes `results/<name>_folds.csv` (every fold, every seed), `results/<name>_summary.csv`, a markdown table, and the three figures above into `results/figures/`. Pass `--no-plots` to skip the figures.
 
 Everything so far runs on CPU. The foundation model embedders will need a GPU for the forward pass but no training — a free Colab T4 is enough for a dataset this size.
 
@@ -84,7 +114,7 @@ Everything so far runs on CPU. The foundation model embedders will need a GPU fo
 
 ## Adding an embedder
 
-One class, two methods, one registry line. The harness handles splits, seeds, metrics and reporting.
+One class, two methods, one registry line. The harness handles splits, seeds, metrics, figures and reporting.
 
 ```python
 class MyEmbedder:
@@ -101,14 +131,31 @@ REGISTRY["my_embedder"] = lambda seed: MyEmbedder()
 
 ---
 
+## Layout
+
+```
+src/scfmbench/
+  data.py        loading, leak-free preprocessing, synthetic generator
+  embedders.py   the methods under test and the registry
+  evaluate.py    leave-one-batch-out protocol and metrics
+  plots.py       the three figures
+  run.py         command line entry point
+tests/           runs on CPU in seconds, no download
+configs/         dataset definitions
+results/         summaries, fold-level CSVs, figures
+```
+
+---
+
 ## Roadmap
 
 - [x] Leave-one-batch-out harness, leak-free preprocessing, two controls
-- [x] `hvg_pca` baseline, test suite, CI
+- [x] `hvg_pca` baseline, test suite, CI, figures
 - [ ] Human pancreas results
 - [ ] scVI baseline (trained per fold on training batches only)
 - [ ] Geneformer zero-shot embeddings
 - [ ] scGPT zero-shot embeddings
+- [ ] Accuracy against wall-clock cost, once a method exists slow enough for the axis to mean something
 - [ ] A second dataset with a different confounding structure
 - [ ] Write-up of where foundation models do and do not earn their cost
 

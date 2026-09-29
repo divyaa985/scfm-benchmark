@@ -73,3 +73,14 @@ def test_pca_baseline_beats_the_negative_control():
     summary = summarise(run_benchmark(ds, ["hvg_pca", "random_projection"], seeds=(0,)))
     scores = summary.set_index("embedder")["macro_f1_mean"]
     assert scores["hvg_pca"] > scores["random_projection"]
+
+
+def test_figures_are_written(tmp_path):
+    """Plotting runs end to end and produces all three files."""
+    from scfmbench.plots import make_all
+
+    ds = make_synthetic(n_cells=300, n_genes=120, n_batches=3, seed=3)
+    results = run_benchmark(ds, ["hvg_pca", "random_projection"], seeds=(0,))
+    paths = make_all(results, tmp_path, "test")
+    assert len(paths) == 3
+    assert all(p.exists() and p.stat().st_size > 1000 for p in paths)
