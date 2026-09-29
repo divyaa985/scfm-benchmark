@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data and model weights are never committed
+data/
+*.h5ad
+*.ckpt
+*.pt
+*.safetensors
+
+# Results: summaries are committed, everything else is not
+results/*
+!results/.gitkeep
+!results/*_summary.md
+!results/*_summary.csv
+!results/*_folds.csv
+
+.env
+.DS_Store

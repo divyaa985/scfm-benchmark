@@ -1,0 +1,9 @@
+# Human pancreas, Luecken et al. 2022 integration benchmark.
+# Download to data/ first; see README "Getting the data".
+name: pancreas
+data: data/human_pancreas_norm_complexBatch.h5ad
+batch_key: tech
+label_key: celltype
+min_cells_per_label: 20
+embedders: [hvg_pca, random_projection, total_counts]
+seeds: [0, 1, 2]
